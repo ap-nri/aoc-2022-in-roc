@@ -13,7 +13,7 @@ priority = \num ->
     else
         num - 64 + 26
 
-priorityOfCommonElementInHalves : Str -> (Int Unsigned32)
+priorityOfCommonElementInHalves : Str -> Result (Int Unsigned32) [OutOfBounds]
 priorityOfCommonElementInHalves = \line ->
     Str.toScalars line
     |> splitListInHalf
@@ -21,8 +21,8 @@ priorityOfCommonElementInHalves = \line ->
     |> priorityOfCommonElement
 
 
-intersectMany : List (Set (Int Unsigned32)) -> Set (Int Unsigned32)
-intersectMany = \sets ->
+intersections : List (Set (Int Unsigned32)) -> Set (Int Unsigned32)
+intersections = \sets ->
     when sets is
         [] -> Set.empty
         [ first ] -> first
@@ -30,45 +30,50 @@ intersectMany = \sets ->
         _ ->
             { before, others } = List.split sets 2
             Set.intersection
-                (intersectMany before)
-                (intersectMany others)
+                (intersections before)
+                (intersections others)
 
 
 priorityOfCommonElement :
     List (List (Int Unsigned32))
-    -> (Int Unsigned32)
-priorityOfCommonElement = \sets ->
-    List.map sets Set.fromList
-        |> intersectMany
+    -> Result (Int Unsigned32) [OutOfBounds]
+priorityOfCommonElement = \lists ->
+    List.map lists Set.fromList
+        |> intersections
         |> Set.toList
-        |> gimme
-        |> priority
+        |> \list -> Result.map (List.get list 0) priority
 
-gimme : List (Int Unsigned32) -> (Int Unsigned32)
-gimme = \l ->
-    when l is
-        [] -> crash "empty!"
-        [x] -> x
-        [x, y, ..] ->
-            xs = Num.toStr x
-            ys = Num.toStr y
-            ls = Num.toStr (List.len l)
-            crash "Expected 1 got \(ls) starting with \(xs), \(ys)"
 
-priorityThreeAtATime : List (Str) -> Int Unsigned32
+priorityThreeAtATime :
+    List (Str)
+    -> Result
+        (Int Unsigned32)
+        [ NoCommonElement
+        , OnlyTwoElements
+        , OnlyOneElement
+        , MoreThanThreeElements Nat
+        ]
 priorityThreeAtATime = \l ->
-    { before, others } = List.split l (3)
+    { before, others } = List.split l 3
     # this is where I'd like to  destructure with first :: second :: third :: rest
     when before is
         [ _, _, _, ] ->
-            (List.map before Str.toScalars |> priorityOfCommonElement) + (priorityThreeAtATime others)
+            when List.map before Str.toScalars |> priorityOfCommonElement is
+                Ok priorityOfHead ->
+                    when (priorityThreeAtATime others) is
+                        Ok priorityOfTail ->
+                            Ok (priorityOfHead + priorityOfTail)
+                        err ->
+                            err
 
-        [] -> 0
-        [_] -> crash "one??"
-        [_, _ ] -> crash "two??"
-        _ ->
-            len = List.len before |> Num.toStr
-            crash "how did you get \(len)?"
+                Err OutOfBounds ->
+                    Err NoCommonElement
+
+        [] -> Ok 0
+        [_] -> Err OnlyOneElement
+        [_, _ ] -> Err OnlyTwoElements
+        # an impossible state if we have destructuring with a tail/rest
+        _ -> Err (MoreThanThreeElements (List.len before))
 
 main =
     content <- "./day3.txt"
@@ -83,16 +88,29 @@ main =
 
     lines = Str.split content "\n"
 
-    sumOfPriorities : Str
+    sumOfPriorities : Result (Int Unsigned32) [OutOfBounds]
     sumOfPriorities =
-        List.map
+        List.mapTry
             lines
             priorityOfCommonElementInHalves
-        |> List.sum
-        |> Num.toStr
+        |> Result.map List.sum
+    
+    part1 =
+        when sumOfPriorities is
+            Ok sp -> Num.toStr sp
+            Err OutOfBounds -> "at some point there was a backpack with no common element in two halves"
 
-    threeLinePriorities = priorityThreeAtATime lines |> Num.toStr
+    threeLinePriorities = 
+        when priorityThreeAtATime lines is
+            Ok p ->
+                Num.toStr p
+            Err NoCommonElement -> "No Common Element"
+            Err OnlyTwoElements -> "Only Two Elements"
+            Err OnlyOneElement -> "Only One Element"
+            Err (MoreThanThreeElements n) ->
+                ns = Num.toStr n
+                "You called List.split l 3 and got \(ns) I'm honestly impressed"
 
-    Stdout.line "part 1 \(sumOfPriorities)\npart 2 \(threeLinePriorities)"
+    Stdout.line "part 1 \(part1)\npart 2 \(threeLinePriorities)"
 
 
