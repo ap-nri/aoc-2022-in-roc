@@ -13,7 +13,7 @@ priority = \num ->
     else
         num - 64 + 26
 
-priorityOfCommonElementInHalves : Str -> Result (Int Unsigned32) [OutOfBounds]
+priorityOfCommonElementInHalves : Str -> Result (Int Unsigned32) [NoCommonElement Str]
 priorityOfCommonElementInHalves = \line ->
     Str.toScalars line
     |> splitListInHalf
@@ -36,28 +36,36 @@ intersections = \sets ->
 
 priorityOfCommonElement :
     List (List (Int Unsigned32))
-    -> Result (Int Unsigned32) [OutOfBounds]
+    -> Result (Int Unsigned32) [NoCommonElement Str]
 priorityOfCommonElement = \lists ->
-    List.map lists Set.fromList
+    intersection = List.map lists Set.fromList
         |> intersections
         |> Set.toList
-        |> \list -> Result.map (List.get list 0) priority
+    when List.get intersection 0 is
+        Ok head ->
+            Ok (priority head)
+        
+        Err OutOfBounds ->
+            strs = List.map lists (\elements -> List.map elements Num.toStr)
+            lines = List.map strs (\line -> Str.joinWith line ", ") 
+            Err (NoCommonElement (Str.joinWith lines "\n"))
 
 
 priorityThreeAtATime :
     List (Str)
     -> Result
         (Int Unsigned32)
-        [ NoCommonElement
-        , OnlyTwoElements
-        , OnlyOneElement
-        , MoreThanThreeElements Nat
+        [ NoCommonElement Str
+        , WrongNumElements Str Str
         ]
 priorityThreeAtATime = \l ->
     { before, others } = List.split l 3
     # this is where I'd like to  destructure with first :: second :: third :: rest
     when before is
-        [ _, _, _, ] ->
+        [] ->
+            Ok 0
+
+        [ _, _, _ ] ->
             when List.map before Str.toScalars |> priorityOfCommonElement is
                 Ok priorityOfHead ->
                     when (priorityThreeAtATime others) is
@@ -66,14 +74,14 @@ priorityThreeAtATime = \l ->
                         err ->
                             err
 
-                Err OutOfBounds ->
-                    Err NoCommonElement
+                Err (NoCommonElement s) ->
+                    Err (NoCommonElement s)
 
-        [] -> Ok 0
-        [_] -> Err OnlyOneElement
-        [_, _ ] -> Err OnlyTwoElements
-        # an impossible state if we have destructuring with a tail/rest
-        _ -> Err (MoreThanThreeElements (List.len before))
+        _ ->
+            WrongNumElements
+                (List.len before |> Num.toStr)
+                (List.len l |> Num.toStr)
+            |> Err
 
 main =
     content <- "./day3.txt"
@@ -88,7 +96,7 @@ main =
 
     lines = Str.split content "\n"
 
-    sumOfPriorities : Result (Int Unsigned32) [OutOfBounds]
+    sumOfPriorities : Result (Int Unsigned32) [NoCommonElement Str]
     sumOfPriorities =
         List.mapTry
             lines
@@ -97,20 +105,23 @@ main =
     
     part1 =
         when sumOfPriorities is
-            Ok sp -> Num.toStr sp
-            Err OutOfBounds -> "at some point there was a backpack with no common element in two halves"
+            Ok sp ->
+                Num.toStr sp
 
-    threeLinePriorities = 
+            Err (NoCommonElement s) ->
+                "at some point there was a backpack with no common element in two halves:\n\(s)"
+
+    part2 = 
         when priorityThreeAtATime lines is
             Ok p ->
                 Num.toStr p
-            Err NoCommonElement -> "No Common Element"
-            Err OnlyTwoElements -> "Only Two Elements"
-            Err OnlyOneElement -> "Only One Element"
-            Err (MoreThanThreeElements n) ->
-                ns = Num.toStr n
-                "You called List.split l 3 and got \(ns) I'm honestly impressed"
 
-    Stdout.line "part 1 \(part1)\npart 2 \(threeLinePriorities)"
+            Err (NoCommonElement s) ->
+                "No Common Element in group of 3:\n\(s)"
+
+            Err (WrongNumElements head total) ->
+                "Tried to get first 3 of \(total) but got \(head)"
+
+    Stdout.line "part 1 \(part1)\npart 2 \(part2)"
 
 
