@@ -17,46 +17,58 @@ priorityOfCommonElementInHalves : Str -> (Int Unsigned32)
 priorityOfCommonElementInHalves = \line ->
     Str.toScalars line
     |> splitListInHalf
-    |> toThree
+    |> \{ before, others } -> [ before, others ]
     |> priorityOfCommonElement
 
-toThree : { before : a, others : b} -> { first : a, second : b, third : b}
-toThree = \{ before, others } -> { first : before, second : others, third : others }
+
+intersectMany : List (Set (Int Unsigned32)) -> Set (Int Unsigned32)
+intersectMany = \sets ->
+    when sets is
+        [] -> Set.empty
+        [ first ] -> first
+        [ first, second ] -> Set.intersection first second
+        _ ->
+            { before, others } = List.split sets 2
+            Set.intersection
+                (intersectMany before)
+                (intersectMany others)
+
 
 priorityOfCommonElement :
-    { first : List (Int Unsigned32)
-    , second : List (Int Unsigned32)
-    , third : List (Int Unsigned32)}
+    List (List (Int Unsigned32))
     -> (Int Unsigned32)
-priorityOfCommonElement = \{first, second, third} ->
-    Set.intersection
-        (Set.fromList first)
-        (Set.fromList second)
-    |> Set.intersection (Set.fromList third)
-    |> Set.toList
-    |> gimme
-    |> priority
+priorityOfCommonElement = \sets ->
+    List.map sets Set.fromList
+        |> intersectMany
+        |> Set.toList
+        |> gimme
+        |> priority
 
-gimme : List a -> a
+gimme : List (Int Unsigned32) -> (Int Unsigned32)
 gimme = \l ->
     when l is
+        [] -> crash "empty!"
         [x] -> x
-        _ -> crash "gimme can fail" 
+        [x, y, ..] ->
+            xs = Num.toStr x
+            ys = Num.toStr y
+            ls = Num.toStr (List.len l)
+            crash "Expected 1 got \(ls) starting with \(xs), \(ys)"
 
 priorityThreeAtATime : List (Str) -> Int Unsigned32
 priorityThreeAtATime = \l ->
     { before, others } = List.split l (3)
     # this is where I'd like to  destructure with first :: second :: third :: rest
     when before is
-        [ first, second, third ] ->
-            (priorityOfCommonElement 
-                { first : Str.toScalars first
-                , second : Str.toScalars second
-                , third : Str.toScalars third
-                }
-            ) + (priorityThreeAtATime others)
+        [ _, _, _, ] ->
+            (List.map before Str.toScalars |> priorityOfCommonElement) + (priorityThreeAtATime others)
 
-        _ -> 0
+        [] -> 0
+        [_] -> crash "one??"
+        [_, _ ] -> crash "two??"
+        _ ->
+            len = List.len before |> Num.toStr
+            crash "how did you get \(len)?"
 
 main =
     content <- "./day3.txt"
@@ -75,7 +87,7 @@ main =
     sumOfPriorities =
         List.map
             lines
-            (priorityOfCommonElementInHalves)
+            priorityOfCommonElementInHalves
         |> List.sum
         |> Num.toStr
 
